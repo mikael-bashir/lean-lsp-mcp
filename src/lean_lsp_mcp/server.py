@@ -20,6 +20,7 @@ from leanclient import DocumentContentChange, LeanLSPClient
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.fastmcp.utilities.logging import configure_logging, get_logger
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -426,7 +427,12 @@ if auth_token:
     )
     mcp_kwargs["token_verifier"] = OptionalTokenVerifier(auth_token)
 
-mcp = FastMCP(**mcp_kwargs)
+mcp = FastMCP(
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
+    **mcp_kwargs
+)
 
 
 def rate_limited(category: str, max_requests: int, per_seconds: int):
