@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional
+import psutil
 
 import certifi
 import orjson
@@ -1393,6 +1394,21 @@ async def multi_attempt(
     return _multi_attempt_lsp(ctx, file_path, line, column, snippets)
 
 
+def log_lean_process_health(tag: str):
+    """Finds the Lean LSP process and logs its RAM usage and status."""
+    found = False
+    for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'status']):
+        try:
+            if 'lean' in proc.info['name'].lower():
+                found = True
+                mem_mb = proc.info['memory_info'].rss / (1024 * 1024)
+                logger.info(f"[{tag}] Lean Process (PID {proc.info['pid']}) | Status: {proc.info['status']} | RAM: {mem_mb:.2f} MB")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    
+    if not found:
+        logger.error(f"[{tag}] No active Lean process found on the system!")
+
 @mcp.tool(
     "lean_run_code",
     annotations=ToolAnnotations(
@@ -1438,9 +1454,37 @@ def run_code(
         assert client is not None
         client.open_file(rel_path)
         opened_file = True
+
+        log_lean_process_health("PRE-DIAGNOSTICS")
+
         raw_diagnostics = client.get_diagnostics(rel_path, inactivity_timeout=15.0)
+
+        log_lean_process_health("POST-DIAGNOSTICS")
+
         check_lsp_response(raw_diagnostics, "get_diagnostics")
+
+        log_lean_process_health("POST-DIAGNOSTICS CHECK")
+    except Exception as e:
+        logger.error(f"run_code failed with exception: {type(e).__name__}: {e}")
+
+        sub_proc = getattr(client, 'proc', getattr(client, 'process', None))
+        
+        if sub_proc is not None:
+            exit_code = sub_proc.poll()
+            logger.error(f"Lean subprocess exit code: {exit_code}")
+            
+            if exit_code == -9:
+                logger.error("🚨 CONFIRMED OOM KILL: Lean process was killed by the OS (Exit Code -9) due to out-of-memory.")
+            elif exit_code is not None:
+                logger.error(f"Lean process crashed with code {exit_code} (Not an OOM kill).")
+            else:
+                logger.error("Lean process is theoretically still running, but the pipe broke. This might be a pure timeout or network proxy issue.")
+        else:
+            logger.warning("Could not locate the subprocess object on the Lean client to check exit codes.")
+            
+        raise # Re-raise to fail the tool cleanly   
     finally:
+
         if opened_file:
             try:
                 client.close_files([rel_path])
