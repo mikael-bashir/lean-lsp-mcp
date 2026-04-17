@@ -1431,7 +1431,7 @@ def run_code(
         )
 
     # Use a unique snippet filename to avoid collisions under concurrency
-    rel_path = f"_mcp_snippet_{uuid.uuid4().hex}.lean"
+    rel_path = "Scratch.lean" # f"_mcp_snippet_{uuid.uuid4().hex}.lean"
     abs_path = lean_project_path / rel_path
 
     try:
@@ -1490,14 +1490,14 @@ def run_code(
                 client.close_files([rel_path])
             except Exception as exc:
                 logger.warning("Failed to close `%s` after run_code: %s", rel_path, exc)
-        try:
-            os.remove(abs_path)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.warning(
-                "Failed to remove temporary Lean snippet `%s`: %s", abs_path, e
-            )
+        # try:
+        #     os.remove(abs_path)
+        # except FileNotFoundError:
+        #     pass
+        # except Exception as e:
+        #     logger.warning(
+        #         "Failed to remove temporary Lean snippet `%s`: %s", abs_path, e
+        #     )
 
     diagnostics = _to_diagnostic_messages(raw_diagnostics)
     has_errors = any(d.severity == "error" for d in diagnostics)
